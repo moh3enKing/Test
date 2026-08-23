@@ -1088,52 +1088,55 @@ async def help_controller(client, message):
     except: await message.reply_text(HELP_TEXT)
 
 def generate_panel_text(user_id: int) -> str:
-    s_clock = "روشن ✔" if CLOCK_STATUS.get(user_id, True) else "خاموش ✖"
-    s_bold = "روشن ✔" if BOLD_MODE_STATUS.get(user_id, False) else "خاموش ✖"
+    s_clock = "روشن ✅" if CLOCK_STATUS.get(user_id, True) else "خاموش ❌"
+    s_bold = "روشن ✅" if BOLD_MODE_STATUS.get(user_id, False) else "خاموش ❌"
     sec_mode = SECRETARY_CONTROL_MODE.get(user_id, "auto")
     if sec_mode == "auto":
         s_sec = "هوشمند 🤖"
     elif sec_mode == "force_off":
-        s_sec = "خاموش 🟢"
+        s_sec = "خاموش ✅"
     else:
         s_sec = "روشن 🔴"
-    s_deleted = "روشن ✔" if DELETED_BACKUP_STATUS.get(user_id, True) else "خاموش ✖"
-    s_seen = "روشن ✔" if AUTO_SEEN_STATUS.get(user_id, False) else "خاموش ✖"
+    s_deleted = "روشن ✅" if DELETED_BACKUP_STATUS.get(user_id, True) else "خاموش ❌"
+    s_seen = "روشن ✅" if AUTO_SEEN_STATUS.get(user_id, False) else "خاموش ❌"
     s_pv = "قفل 🔒" if PV_LOCK_STATUS.get(user_id, False) else "باز 🔓"
-    s_anti = "روشن ✔" if ANTI_LOGIN_STATUS.get(user_id, False) else "خاموش ✖"
-    s_type = "روشن ✔" if TYPING_MODE_STATUS.get(user_id, False) else "خاموش ✖"
-    s_game = "روشن ✔" if PLAYING_MODE_STATUS.get(user_id, False) else "خاموش ✖"
-    s_enemy = "روشن ✔" if GLOBAL_ENEMY_STATUS.get(user_id, False) else "خاموش ✖"
+    s_anti = "روشن ✅" if ANTI_LOGIN_STATUS.get(user_id, False) else "خاموش ❌"
+    s_type = "روشن ✅" if TYPING_MODE_STATUS.get(user_id, False) else "خاموش ❌"
+    s_game = "روشن ✅" if PLAYING_MODE_STATUS.get(user_id, False) else "خاموش ❌"
+    s_enemy = "روشن ✅" if GLOBAL_ENEMY_STATUS.get(user_id, False) else "خاموش ❌"
     t_lang = AUTO_TRANSLATE_TARGET.get(user_id)
-    lang_map = {"en": "EN 🇺🇸", "ru": "RU 🇷🇺", "zh-CN": "CN 🇨🇳"}
-    s_lang = lang_map.get(t_lang, "خاموش ✖")
+    lang_map = {"en": "انگلیسی", "ru": "روسی", "zh-CN": "چینی"}
+    s_lang = lang_map.get(t_lang, "خاموش ❌")
     preview = stylize_time("12:34", USER_FONT_CHOICES.get(user_id, "stylized"))
     font_name = USER_FONT_CHOICES.get(user_id, "stylized")
 
-    return (
-        "⚡️ **پنل مدیریت سلف‌بات**\n"
-        f"👤 کاربر: `{user_id}`\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"🕐 ساعت پروفایل: **{s_clock}**\n"
-        f"🔤 فونت: **{font_name}** (`{preview}`)\n"
-        f"🅱️ بولد: **{s_bold}**\n"
-        f"📨 منشی: **{s_sec}**\n"
-        f"👁 سین خودکار: **{s_seen}**\n"
-        f"🔐 پیوی: **{s_pv}**\n"
-        f"🛡 انتی‌لاگین: **{s_anti}**\n"
-        f"⌨️ تایپ: **{s_type}**\n"
-        f"🎮 بازی: **{s_game}**\n"
-        f"⚔️ دشمن همگانی: **{s_enemy}**\n"
-        f"🗑 ضدحذف: **{s_deleted}**\n"
-        f"🌐 ترجمه: **{s_lang}**\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "از دکمه‌های پایین برای تغییر تنظیمات استفاده کن."
-    )
+    # Keep each status on its own simple line to avoid RTL/LTR scrambling in Telegram.
+    lines = [
+        "⚡️ پنل مدیریت سلف‌بات",
+        f"👤 آیدی: {user_id}",
+        "————————————",
+        f"🕐 ساعت پروفایل: {s_clock}",
+        f"🔤 فونت: {font_name} | {preview}",
+        f"🅱️ بولد: {s_bold}",
+        f"📨 منشی: {s_sec}",
+        f"👁 سین خودکار: {s_seen}",
+        f"🔐 قفل پیوی: {s_pv}",
+        f"🛡 انتی‌لاگین: {s_anti}",
+        f"⌨️ تایپ جعلی: {s_type}",
+        f"🎮 وضعیت بازی: {s_game}",
+        f"⚔️ دشمن همگانی: {s_enemy}",
+        f"🗑 ضدحذف: {s_deleted}",
+        f"🌐 ترجمه خودکار: {s_lang}",
+        "————————————",
+        "از دکمه‌های پایین صفحه استفاده کن.",
+        "برای بستن: «بستن پنل»",
+    ]
+    return "\n".join(lines)
 
 
 def generate_panel_reply_keyboard(user_id: int) -> ReplyKeyboardMarkup:
-    s_clock = "✔" if CLOCK_STATUS.get(user_id, True) else "✖"
-    s_bold = "✔" if BOLD_MODE_STATUS.get(user_id, False) else "✖"
+    s_clock = "✅" if CLOCK_STATUS.get(user_id, True) else "❌"
+    s_bold = "✅" if BOLD_MODE_STATUS.get(user_id, False) else "❌"
     sec_mode = SECRETARY_CONTROL_MODE.get(user_id, "auto")
     if sec_mode == "auto":
         s_sec = "🤖"
@@ -1141,17 +1144,17 @@ def generate_panel_reply_keyboard(user_id: int) -> ReplyKeyboardMarkup:
         s_sec = "🟢"
     else:
         s_sec = "🔴"
-    s_deleted = "✔" if DELETED_BACKUP_STATUS.get(user_id, True) else "✖"
-    s_seen = "✔" if AUTO_SEEN_STATUS.get(user_id, False) else "✖"
+    s_deleted = "✅" if DELETED_BACKUP_STATUS.get(user_id, True) else "❌"
+    s_seen = "✅" if AUTO_SEEN_STATUS.get(user_id, False) else "❌"
     s_pv = "🔒" if PV_LOCK_STATUS.get(user_id, False) else "🔓"
-    s_anti = "✔" if ANTI_LOGIN_STATUS.get(user_id, False) else "✖"
-    s_type = "✔" if TYPING_MODE_STATUS.get(user_id, False) else "✖"
-    s_game = "✔" if PLAYING_MODE_STATUS.get(user_id, False) else "✖"
-    s_enemy = "✔" if GLOBAL_ENEMY_STATUS.get(user_id, False) else "✖"
+    s_anti = "✅" if ANTI_LOGIN_STATUS.get(user_id, False) else "❌"
+    s_type = "✅" if TYPING_MODE_STATUS.get(user_id, False) else "❌"
+    s_game = "✅" if PLAYING_MODE_STATUS.get(user_id, False) else "❌"
+    s_enemy = "✅" if GLOBAL_ENEMY_STATUS.get(user_id, False) else "❌"
     t_lang = AUTO_TRANSLATE_TARGET.get(user_id)
-    l_en = "✔" if t_lang == "en" else "✖"
-    l_ru = "✔" if t_lang == "ru" else "✖"
-    l_cn = "✔" if t_lang == "zh-CN" else "✖"
+    l_en = "✅" if t_lang == "en" else "❌"
+    l_ru = "✅" if t_lang == "ru" else "❌"
+    l_cn = "✅" if t_lang == "zh-CN" else "❌"
     preview = stylize_time("12:34", USER_FONT_CHOICES.get(user_id, "stylized"))
 
     return ReplyKeyboardMarkup(
@@ -1166,6 +1169,8 @@ def generate_panel_reply_keyboard(user_id: int) -> ReplyKeyboardMarkup:
             [KeyboardButton("بستن پنل ✖")],
         ],
         resize_keyboard=True,
+        one_time_keyboard=False,
+        is_persistent=True,
     )
 
 
@@ -1178,11 +1183,23 @@ async def panel_command_controller(client, message):
         except Exception:
             pass
 
+        # Send in the same chat (works best for reply keyboard visibility).
+        # If command was typed outside Saved Messages, also mirror a copy there.
+        chat_id = message.chat.id if message.chat else "me"
         await client.send_message(
-            "me",
+            chat_id,
             generate_panel_text(user_id),
             reply_markup=generate_panel_reply_keyboard(user_id),
         )
+        if chat_id != "me" and chat_id != user_id:
+            try:
+                await client.send_message(
+                    "me",
+                    generate_panel_text(user_id),
+                    reply_markup=generate_panel_reply_keyboard(user_id),
+                )
+            except Exception:
+                pass
     except Exception as e:
         logging.exception("panel_command_controller failed: %s", e)
         try:
