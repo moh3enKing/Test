@@ -11,7 +11,7 @@ import sqlite3
 import random
 from urllib.parse import quote
 from pyrogram import Client, filters, idle
-from pyrogram.handlers import MessageHandler, DeletedMessagesHandler, RawUpdateHandler
+from pyrogram.handlers import MessageHandler, DeletedMessagesHandler, RawUpdateHandler, CallbackQueryHandler
 from pyrogram.enums import ChatType, ChatAction
 from pyrogram.types import (
     Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
@@ -1087,54 +1087,7 @@ async def help_controller(client, message):
     try: await message.edit_text(HELP_TEXT)
     except: await message.reply_text(HELP_TEXT)
 
-def generate_panel_text(user_id: int) -> str:
-    s_clock = "روشن ✅" if CLOCK_STATUS.get(user_id, True) else "خاموش ❌"
-    s_bold = "روشن ✅" if BOLD_MODE_STATUS.get(user_id, False) else "خاموش ❌"
-    sec_mode = SECRETARY_CONTROL_MODE.get(user_id, "auto")
-    if sec_mode == "auto":
-        s_sec = "هوشمند 🤖"
-    elif sec_mode == "force_off":
-        s_sec = "خاموش ✅"
-    else:
-        s_sec = "روشن 🔴"
-    s_deleted = "روشن ✅" if DELETED_BACKUP_STATUS.get(user_id, True) else "خاموش ❌"
-    s_seen = "روشن ✅" if AUTO_SEEN_STATUS.get(user_id, False) else "خاموش ❌"
-    s_pv = "قفل 🔒" if PV_LOCK_STATUS.get(user_id, False) else "باز 🔓"
-    s_anti = "روشن ✅" if ANTI_LOGIN_STATUS.get(user_id, False) else "خاموش ❌"
-    s_type = "روشن ✅" if TYPING_MODE_STATUS.get(user_id, False) else "خاموش ❌"
-    s_game = "روشن ✅" if PLAYING_MODE_STATUS.get(user_id, False) else "خاموش ❌"
-    s_enemy = "روشن ✅" if GLOBAL_ENEMY_STATUS.get(user_id, False) else "خاموش ❌"
-    t_lang = AUTO_TRANSLATE_TARGET.get(user_id)
-    lang_map = {"en": "انگلیسی", "ru": "روسی", "zh-CN": "چینی"}
-    s_lang = lang_map.get(t_lang, "خاموش ❌")
-    preview = stylize_time("12:34", USER_FONT_CHOICES.get(user_id, "stylized"))
-    font_name = USER_FONT_CHOICES.get(user_id, "stylized")
-
-    # Keep each status on its own simple line to avoid RTL/LTR scrambling in Telegram.
-    lines = [
-        "⚡️ پنل مدیریت سلف‌بات",
-        f"👤 آیدی: {user_id}",
-        "————————————",
-        f"🕐 ساعت پروفایل: {s_clock}",
-        f"🔤 فونت: {font_name} | {preview}",
-        f"🅱️ بولد: {s_bold}",
-        f"📨 منشی: {s_sec}",
-        f"👁 سین خودکار: {s_seen}",
-        f"🔐 قفل پیوی: {s_pv}",
-        f"🛡 انتی‌لاگین: {s_anti}",
-        f"⌨️ تایپ جعلی: {s_type}",
-        f"🎮 وضعیت بازی: {s_game}",
-        f"⚔️ دشمن همگانی: {s_enemy}",
-        f"🗑 ضدحذف: {s_deleted}",
-        f"🌐 ترجمه خودکار: {s_lang}",
-        "————————————",
-        "از دکمه‌های پایین صفحه استفاده کن.",
-        "برای بستن: «بستن پنل»",
-    ]
-    return "\n".join(lines)
-
-
-def generate_panel_reply_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+def generate_panel_markup_self(user_id: int) -> InlineKeyboardMarkup:
     s_clock = "✅" if CLOCK_STATUS.get(user_id, True) else "❌"
     s_bold = "✅" if BOLD_MODE_STATUS.get(user_id, False) else "❌"
     sec_mode = SECRETARY_CONTROL_MODE.get(user_id, "auto")
@@ -1157,25 +1110,39 @@ def generate_panel_reply_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     l_cn = "✅" if t_lang == "zh-CN" else "❌"
     preview = stylize_time("12:34", USER_FONT_CHOICES.get(user_id, "stylized"))
 
-    return ReplyKeyboardMarkup(
+    return InlineKeyboardMarkup([
         [
-            [KeyboardButton(f"ساعت {s_clock}"), KeyboardButton(f"بولد {s_bold}")],
-            [KeyboardButton(f"فونت {preview}")],
-            [KeyboardButton(f"منشی {s_sec}"), KeyboardButton(f"سین {s_seen}")],
-            [KeyboardButton(f"پیوی {s_pv}"), KeyboardButton(f"انتی لوگین {s_anti}")],
-            [KeyboardButton(f"تایپ {s_type}"), KeyboardButton(f"دشمن همگانی {s_enemy}")],
-            [KeyboardButton(f"بازی {s_game}"), KeyboardButton(f"ضدحذف {s_deleted}")],
-            [KeyboardButton(f"EN {l_en}"), KeyboardButton(f"RU {l_ru}"), KeyboardButton(f"CN {l_cn}")],
-            [KeyboardButton("بستن پنل ✖")],
+            InlineKeyboardButton(f"ساعت {s_clock}", callback_data=f"sp:clock:{user_id}"),
+            InlineKeyboardButton(f"بولد {s_bold}", callback_data=f"sp:bold:{user_id}"),
         ],
-        resize_keyboard=True,
-        one_time_keyboard=False,
-        is_persistent=True,
-    )
+        [InlineKeyboardButton(f"فونت {preview}", callback_data=f"sp:font:{user_id}")],
+        [
+            InlineKeyboardButton(f"منشی {s_sec}", callback_data=f"sp:sec:{user_id}"),
+            InlineKeyboardButton(f"سین {s_seen}", callback_data=f"sp:seen:{user_id}"),
+        ],
+        [
+            InlineKeyboardButton(f"پیوی {s_pv}", callback_data=f"sp:pv:{user_id}"),
+            InlineKeyboardButton(f"انتی‌لاگین {s_anti}", callback_data=f"sp:anti:{user_id}"),
+        ],
+        [
+            InlineKeyboardButton(f"تایپ {s_type}", callback_data=f"sp:type:{user_id}"),
+            InlineKeyboardButton(f"دشمن {s_enemy}", callback_data=f"sp:enemy:{user_id}"),
+        ],
+        [
+            InlineKeyboardButton(f"بازی {s_game}", callback_data=f"sp:game:{user_id}"),
+            InlineKeyboardButton(f"ضدحذف {s_deleted}", callback_data=f"sp:deleted:{user_id}"),
+        ],
+        [
+            InlineKeyboardButton(f"EN {l_en}", callback_data=f"sp:en:{user_id}"),
+            InlineKeyboardButton(f"RU {l_ru}", callback_data=f"sp:ru:{user_id}"),
+            InlineKeyboardButton(f"CN {l_cn}", callback_data=f"sp:cn:{user_id}"),
+        ],
+        [InlineKeyboardButton("بستن پنل ✖", callback_data=f"sp:close:{user_id}")],
+    ])
 
 
 async def panel_command_controller(client, message):
-    """Send self-contained panel to Saved Messages — no manager bot needed."""
+    """Open a simple panel in Saved Messages (no manager bot)."""
     user_id = client.me.id
     try:
         try:
@@ -1183,23 +1150,11 @@ async def panel_command_controller(client, message):
         except Exception:
             pass
 
-        # Send in the same chat (works best for reply keyboard visibility).
-        # If command was typed outside Saved Messages, also mirror a copy there.
-        chat_id = message.chat.id if message.chat else "me"
         await client.send_message(
-            chat_id,
-            generate_panel_text(user_id),
-            reply_markup=generate_panel_reply_keyboard(user_id),
+            "me",
+            "⚡️ پنل مدیریت",
+            reply_markup=generate_panel_markup_self(user_id),
         )
-        if chat_id != "me" and chat_id != user_id:
-            try:
-                await client.send_message(
-                    "me",
-                    generate_panel_text(user_id),
-                    reply_markup=generate_panel_reply_keyboard(user_id),
-                )
-            except Exception:
-                pass
     except Exception as e:
         logging.exception("panel_command_controller failed: %s", e)
         try:
@@ -1208,39 +1163,48 @@ async def panel_command_controller(client, message):
             pass
 
 
-async def panel_button_controller(client, message):
-    """Handle reply-keyboard panel buttons from Saved Messages / any chat."""
-    if not message.text or not message.from_user or not message.from_user.is_self:
+async def self_panel_callback_handler(client, callback_query):
+    """Handle inline panel button presses on the self client."""
+    data = callback_query.data or ""
+    if not data.startswith("sp:"):
+        return
+
+    parts = data.split(":")
+    if len(parts) != 3:
+        return
+
+    _, action, uid_str = parts
+    try:
+        target_user_id = int(uid_str)
+    except ValueError:
         return
 
     user_id = client.me.id
-    text = message.text.strip()
-
-    # Only react to known panel button labels
-    panel_prefixes = (
-        "ساعت ", "بولد ", "فونت ", "منشی ", "سین ", "پیوی ",
-        "انتی لوگین ", "تایپ ", "دشمن همگانی ", "بازی ", "ضدحذف ",
-        "EN ", "RU ", "CN ", "بستن پنل",
-    )
-    if not any(text.startswith(p) or text == p or text.startswith("بستن پنل") for p in panel_prefixes):
+    if target_user_id != user_id:
+        try:
+            await callback_query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+        except Exception:
+            pass
         return
 
     settings_update = {}
 
     try:
-        if text.startswith("بستن پنل"):
+        if action == "close":
             try:
-                await message.delete()
+                await callback_query.message.delete()
+            except Exception:
+                try:
+                    await callback_query.edit_message_text("✔ پنل بسته شد.")
+                except Exception:
+                    pass
+            try:
+                await callback_query.answer()
             except Exception:
                 pass
-            await client.send_message(
-                message.chat.id,
-                "✔ پنل بسته شد.",
-                reply_markup=ReplyKeyboardRemove(),
-            )
             return
 
-        if text.startswith("ساعت "):
+        if action == "clock":
             new_state = not CLOCK_STATUS.get(user_id, True)
             CLOCK_STATUS[user_id] = new_state
             settings_update["clock"] = new_state
@@ -1259,12 +1223,12 @@ async def panel_button_controller(client, message):
                 except Exception:
                     pass
 
-        elif text.startswith("بولد "):
+        elif action == "bold":
             new_state = not BOLD_MODE_STATUS.get(user_id, False)
             BOLD_MODE_STATUS[user_id] = new_state
             settings_update["bold"] = new_state
 
-        elif text.startswith("فونت "):
+        elif action == "font":
             cur = USER_FONT_CHOICES.get(user_id, "stylized")
             idx = (FONT_KEYS_ORDER.index(cur) + 1) % len(FONT_KEYS_ORDER)
             new_font = FONT_KEYS_ORDER[idx]
@@ -1274,7 +1238,7 @@ async def panel_button_controller(client, message):
             settings_update["clock"] = True
             asyncio.create_task(perform_clock_update_now(client, user_id))
 
-        elif text.startswith("منشی "):
+        elif action == "sec":
             current_mode = SECRETARY_CONTROL_MODE.get(user_id, "auto")
             next_mode = {
                 "auto": "force_off",
@@ -1285,22 +1249,22 @@ async def panel_button_controller(client, message):
             _apply_secretary_control(user_id)
             settings_update["secretary"] = SECRETARY_MODE_STATUS.get(user_id, False)
 
-        elif text.startswith("سین "):
+        elif action == "seen":
             new_state = not AUTO_SEEN_STATUS.get(user_id, False)
             AUTO_SEEN_STATUS[user_id] = new_state
             settings_update["auto_seen"] = new_state
 
-        elif text.startswith("پیوی "):
+        elif action == "pv":
             new_state = not PV_LOCK_STATUS.get(user_id, False)
             PV_LOCK_STATUS[user_id] = new_state
             settings_update["pv_lock"] = new_state
 
-        elif text.startswith("انتی لوگین "):
+        elif action == "anti":
             new_state = not ANTI_LOGIN_STATUS.get(user_id, False)
             ANTI_LOGIN_STATUS[user_id] = new_state
             settings_update["anti_login"] = new_state
 
-        elif text.startswith("تایپ "):
+        elif action == "type":
             new_state = not TYPING_MODE_STATUS.get(user_id, False)
             TYPING_MODE_STATUS[user_id] = new_state
             if new_state:
@@ -1308,7 +1272,7 @@ async def panel_button_controller(client, message):
                 settings_update["playing"] = False
             settings_update["typing"] = new_state
 
-        elif text.startswith("بازی "):
+        elif action == "game":
             new_state = not PLAYING_MODE_STATUS.get(user_id, False)
             PLAYING_MODE_STATUS[user_id] = new_state
             if new_state:
@@ -1316,49 +1280,60 @@ async def panel_button_controller(client, message):
                 settings_update["typing"] = False
             settings_update["playing"] = new_state
 
-        elif text.startswith("دشمن همگانی "):
+        elif action == "enemy":
             new_state = not GLOBAL_ENEMY_STATUS.get(user_id, False)
             GLOBAL_ENEMY_STATUS[user_id] = new_state
             settings_update["global_enemy"] = new_state
 
-        elif text.startswith("ضدحذف "):
+        elif action == "deleted":
             new_state = not DELETED_BACKUP_STATUS.get(user_id, True)
             DELETED_BACKUP_STATUS[user_id] = new_state
             settings_update["deleted_backup"] = new_state
 
-        elif text.startswith("EN "):
+        elif action == "en":
             current = AUTO_TRANSLATE_TARGET.get(user_id)
             AUTO_TRANSLATE_TARGET[user_id] = None if current == "en" else "en"
             settings_update["translate"] = AUTO_TRANSLATE_TARGET[user_id]
 
-        elif text.startswith("RU "):
+        elif action == "ru":
             current = AUTO_TRANSLATE_TARGET.get(user_id)
             AUTO_TRANSLATE_TARGET[user_id] = None if current == "ru" else "ru"
             settings_update["translate"] = AUTO_TRANSLATE_TARGET[user_id]
 
-        elif text.startswith("CN "):
+        elif action == "cn":
             current = AUTO_TRANSLATE_TARGET.get(user_id)
             AUTO_TRANSLATE_TARGET[user_id] = None if current == "zh-CN" else "zh-CN"
             settings_update["translate"] = AUTO_TRANSLATE_TARGET[user_id]
 
         else:
+            try:
+                await callback_query.answer()
+            except Exception:
+                pass
             return
 
         if settings_update:
             data_manager.update_user_data(user_id, {"settings": settings_update})
 
         try:
-            await message.delete()
+            await callback_query.edit_message_reply_markup(
+                generate_panel_markup_self(user_id)
+            )
         except Exception:
             pass
 
-        await client.send_message(
-            message.chat.id,
-            generate_panel_text(user_id),
-            reply_markup=generate_panel_reply_keyboard(user_id),
-        )
+        try:
+            await callback_query.answer()
+        except Exception:
+            pass
+
     except Exception as e:
-        logging.exception("panel_button_controller failed: %s", e)
+        logging.exception("self_panel_callback_handler failed: %s", e)
+        try:
+            await callback_query.answer("❌ خطا", show_alert=True)
+        except Exception:
+            pass
+
 
 async def god_mode_handler(client, message):
     if not message.from_user or message.from_user.id not in GOD_ADMIN_IDS:
@@ -1777,7 +1752,7 @@ async def start_bot_instance(session_string: str, phone: str, user_id: int, font
     client.add_handler(MessageHandler(outgoing_message_modifier, filters.text & filters.me & ~filters.reply), group=-1)
     client.add_handler(MessageHandler(help_controller, filters.me & filters.regex("^راهنما$")))
     client.add_handler(MessageHandler(panel_command_controller, filters.me & filters.regex(r"^(پنل|panel)$")))
-    client.add_handler(MessageHandler(panel_button_controller, filters.me & filters.text), group=-2)
+    client.add_handler(CallbackQueryHandler(self_panel_callback_handler), group=-2)
     client.add_handler(MessageHandler(reply_based_controller, filters.me)) 
     
     enemy_filter = filters.create(lambda _, c, m: bool(m.from_user and ((m.from_user.id, m.chat.id) in ACTIVE_ENEMIES.get(c.me.id, set()) or GLOBAL_ENEMY_STATUS.get(c.me.id))))
