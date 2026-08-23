@@ -51,11 +51,11 @@ patch_peer_id_validation()
 
 _api_id_raw = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # optional — manager bot only
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-if not _api_id_raw or not API_HASH:
+if not _api_id_raw or not API_HASH or not BOT_TOKEN:
     raise RuntimeError(
-        "❌ Missing Environment Variables: API_ID / API_HASH"
+        "❌ Missing Environment Variables: API_ID / API_HASH / BOT_TOKEN"
     )
 
 API_ID = int(_api_id_raw)
@@ -1144,25 +1144,59 @@ def generate_panel_markup_self(user_id: int) -> InlineKeyboardMarkup:
 
 
 async def panel_command_controller(client, message):
-    """Open a simple panel in Saved Messages (no manager bot)."""
-    user_id = client.me.id
+    """Open panel via manager bot inline results (real buttons)."""
+    bot_username = "None"
     try:
+        if not BOT_TOKEN:
+            await message.edit_text("❌ BOT_TOKEN تنظیم نشده است.")
+            return
+
+        bot_info = await manager_bot.get_me()
+        bot_username = bot_info.username or "None"
+
+        results = await client.get_inline_bot_results(bot_username, "panel")
+        if results and results.results:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            await client.send_inline_bot_result(
+                message.chat.id,
+                results.query_id,
+                results.results[0].id,
+            )
+        else:
+            try:
+                await message.edit_text(
+                    f"❌ پنل اینلاین خالی بود.\nاز استارت بودن @{bot_username} مطمئن شو."
+                )
+            except Exception:
+                await client.send_message(
+                    "me",
+                    f"❌ پنل اینلاین خالی بود.\nاز استارت بودن @{bot_username} مطمئن شو.",
+                )
+    except ChatSendInlineForbidden:
         try:
-            await message.delete()
+            await message.edit_text(
+                "🚫 در این چت اینلاین مجاز نیست. در Saved Messages تست کن."
+            )
         except Exception:
             pass
-
-        await client.send_message(
-            "me",
-            "⚡️ پنل مدیریت",
-            reply_markup=generate_panel_markup_self(user_id),
-        )
     except Exception as e:
         logging.exception("panel_command_controller failed: %s", e)
         try:
-            await client.send_message("me", f"❌ خطا در باز کردن پنل: {e}")
+            await message.edit_text(
+                f"❌ خطا در لود پنل: {e}\n\n"
+                f"⚠️ اول @{bot_username} را /start کن."
+            )
         except Exception:
-            pass
+            try:
+                await client.send_message(
+                    "me",
+                    f"❌ خطا در لود پنل: {e}\n⚠️ اول @{bot_username} را /start کن.",
+                )
+            except Exception:
+                pass
 
 
 async def self_panel_callback_handler(client, callback_query):
@@ -1770,12 +1804,7 @@ async def start_bot_instance(session_string: str, phone: str, user_id: int, font
     ACTIVE_BOTS[user_id] = (client, tasks)
     logging.info(f"✅ Bot started for user {user_id}")
 
-if BOT_TOKEN:
-    manager_bot = Client("manager_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-else:
-    # Placeholder so @manager_bot decorators still bind; it will never be started.
-    manager_bot = Client("manager_bot_disabled", api_id=API_ID, api_hash=API_HASH, bot_token="1:disabled")
-    logging.warning("⚠️ BOT_TOKEN not set — manager bot disabled (selfbot-only mode)")
+manager_bot = Client("manager_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 
 def generate_panel_markup(user_id):
@@ -1824,14 +1853,27 @@ def generate_panel_markup(user_id):
 @manager_bot.on_inline_query()
 async def inline_panel_handler(client, query):
     user_id = query.from_user.id
-    if query.query == "panel":
-        result = InlineQueryResultArticle(
-            title="پنل مدیریت", 
-            input_message_content=InputTextMessageContent(f"⚡️ **مدیریت پیشرفته سلف بات**\n👤 کاربر: {user_id}\n\nوضعیت اتصال: ✔ برقرار"),
-            reply_markup=generate_panel_markup(user_id), 
-            thumb_url="https://telegra.ph/file/1e3b567786f7800e80816.jpg"
-        )
-        await query.answer([result], cache_time=0)
+    q = (query.query or "").strip().lower()
+    logging.info("Inline query from %s: %r", user_id, query.query)
+    try:
+        # Always answer — empty answer causes BOT_RESPONSE_TIMEOUT
+        if q in ("", "panel", "پنل"):
+            result = InlineQueryResultArticle(
+                id=f"panel-{user_id}",
+                title="پنل مدیریت",
+                description="باز کردن پنل سلف‌بات",
+                input_message_content=InputTextMessageContent("⚡️ پنل مدیریت"),
+                reply_markup=generate_panel_markup(user_id),
+            )
+            await query.answer([result], cache_time=0, is_personal=True)
+        else:
+            await query.answer([], cache_time=0, is_personal=True)
+    except Exception as e:
+        logging.exception("inline_panel_handler error: %s", e)
+        try:
+            await query.answer([], cache_time=0)
+        except Exception:
+            pass
 
 @manager_bot.on_callback_query()
 async def callback_panel_handler(client, callback):
@@ -2223,14 +2265,11 @@ async def try_start_primary_session():
 
 async def main():
     try:
-        # start manager bot only if BOT_TOKEN is configured
-        if BOT_TOKEN:
-            await manager_bot.start()
-            me_bot = await manager_bot.get_me()
-            logging.info("✅ Manager bot started as @%s (id=%s)", me_bot.username, me_bot.id)
-            logging.info("👉 Open https://t.me/%s and send /start", me_bot.username)
-        else:
-            logging.info("ℹ️ Manager bot skipped (no BOT_TOKEN)")
+        # start manager bot (required for panel buttons)
+        await manager_bot.start()
+        me_bot = await manager_bot.get_me()
+        logging.info("✅ Manager bot started as @%s (id=%s)", me_bot.username, me_bot.id)
+        logging.info("👉 Open https://t.me/%s and send /start", me_bot.username)
 
         # start Render web server (keeps free instance awake via health checks)
         await start_web_server()
