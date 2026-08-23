@@ -1,6 +1,8 @@
 import asyncio
 import os
 import logging
+from aiohttp import web
+import asyncio
 import re
 import aiohttp
 import time
@@ -1911,6 +1913,8 @@ async def main():
     # Original helper/manager bot remains enabled for panel/login/admin controls.
     await manager_bot.start()
     logging.info("✅ Manager bot started")
+
+await start_web_server()
 
     await idle()
 
