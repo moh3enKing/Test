@@ -1870,6 +1870,7 @@ async def inline_panel_handler(client, query):
 async def callback_panel_handler(client, callback):
     try:
         raw = callback.data or ""
+        print(f"[CALLBACK] from={getattr(callback.from_user, 'id', None)} data={raw!r}", flush=True)
         logging.info("Panel callback: from=%s data=%r", getattr(callback.from_user, "id", None), raw)
 
         if not raw:
@@ -2317,6 +2318,16 @@ async def main():
         me_bot = await manager_bot.get_me()
         logging.info("✅ Manager bot started as @%s (id=%s)", me_bot.username, me_bot.id)
         logging.info("👉 Open https://t.me/%s and send /start", me_bot.username)
+        print(f"[BOOT] manager bot @{me_bot.username} id={me_bot.id}", flush=True)
+
+        async def _raw_cb_debug(client, update, users, chats):
+            name = type(update).__name__
+            if "Callback" in name:
+                print(f"[RAW] {name}: {update}", flush=True)
+                logging.info("RAW callback update: %s", name)
+
+        manager_bot.add_handler(RawUpdateHandler(_raw_cb_debug), group=-100)
+        logging.info("✅ Callback raw debug registered")
 
         # start Render web server (keeps free instance awake via health checks)
         await start_web_server()
