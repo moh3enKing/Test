@@ -49,14 +49,16 @@ patch_peer_id_validation()
 # Render Environment Variables
 # ==============================
 
-API_ID = int(os.getenv("API_ID"))
+_api_id_raw = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # optional — manager bot only
 
-if not API_ID or not API_HASH or not BOT_TOKEN:
+if not _api_id_raw or not API_HASH:
     raise RuntimeError(
-        "❌ Missing Environment Variables: API_ID / API_HASH / BOT_TOKEN"
+        "❌ Missing Environment Variables: API_ID / API_HASH"
     )
+
+API_ID = int(_api_id_raw)
 
 GOD_ADMIN_IDS = [5637609683]
 
@@ -1768,7 +1770,13 @@ async def start_bot_instance(session_string: str, phone: str, user_id: int, font
     ACTIVE_BOTS[user_id] = (client, tasks)
     logging.info(f"✅ Bot started for user {user_id}")
 
-manager_bot = Client("manager_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+if BOT_TOKEN:
+    manager_bot = Client("manager_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+else:
+    # Placeholder so @manager_bot decorators still bind; it will never be started.
+    manager_bot = Client("manager_bot_disabled", api_id=API_ID, api_hash=API_HASH, bot_token="1:disabled")
+    logging.warning("⚠️ BOT_TOKEN not set — manager bot disabled (selfbot-only mode)")
+
 
 def generate_panel_markup(user_id):
     s_clock = "✔" if CLOCK_STATUS.get(user_id, True) else "✖"
@@ -2215,11 +2223,14 @@ async def try_start_primary_session():
 
 async def main():
     try:
-        # start manager bot
-        await manager_bot.start()
-        me_bot = await manager_bot.get_me()
-        logging.info("✅ Manager bot started as @%s (id=%s)", me_bot.username, me_bot.id)
-        logging.info("👉 Open https://t.me/%s and send /start", me_bot.username)
+        # start manager bot only if BOT_TOKEN is configured
+        if BOT_TOKEN:
+            await manager_bot.start()
+            me_bot = await manager_bot.get_me()
+            logging.info("✅ Manager bot started as @%s (id=%s)", me_bot.username, me_bot.id)
+            logging.info("👉 Open https://t.me/%s and send /start", me_bot.username)
+        else:
+            logging.info("ℹ️ Manager bot skipped (no BOT_TOKEN)")
 
         # start Render web server (keeps free instance awake via health checks)
         await start_web_server()
