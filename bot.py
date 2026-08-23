@@ -1144,59 +1144,50 @@ def generate_panel_markup_self(user_id: int) -> InlineKeyboardMarkup:
 
 
 async def panel_command_controller(client, message):
-    """Open panel via manager bot inline results (real buttons)."""
+    """
+    Open panel by having the manager BOT send a message with buttons.
+    Avoids inline-mode timeouts (GetInlineBotResults).
+    Panel appears in the bot private chat.
+    """
+    user_id = client.me.id
     bot_username = "None"
     try:
-        if not BOT_TOKEN:
-            await message.edit_text("❌ BOT_TOKEN تنظیم نشده است.")
-            return
-
         bot_info = await manager_bot.get_me()
         bot_username = bot_info.username or "None"
 
-        results = await client.get_inline_bot_results(bot_username, "panel")
-        if results and results.results:
-            try:
-                await message.delete()
-            except Exception:
-                pass
-            await client.send_inline_bot_result(
-                message.chat.id,
-                results.query_id,
-                results.results[0].id,
-            )
-        else:
-            try:
-                await message.edit_text(
-                    f"❌ پنل اینلاین خالی بود.\nاز استارت بودن @{bot_username} مطمئن شو."
-                )
-            except Exception:
-                await client.send_message(
-                    "me",
-                    f"❌ پنل اینلاین خالی بود.\nاز استارت بودن @{bot_username} مطمئن شو.",
-                )
-    except ChatSendInlineForbidden:
         try:
-            await message.edit_text(
-                "🚫 در این چت اینلاین مجاز نیست. در Saved Messages تست کن."
+            await message.delete()
+        except Exception:
+            pass
+
+        await manager_bot.send_message(
+            user_id,
+            "⚡️ پنل مدیریت",
+            reply_markup=generate_panel_markup(user_id),
+        )
+
+        # small confirmation in the chat where user typed پنل
+        try:
+            await client.send_message(
+                message.chat.id,
+                f"✅ پنل در چت @{bot_username} ارسال شد.",
             )
         except Exception:
             pass
+
     except Exception as e:
         logging.exception("panel_command_controller failed: %s", e)
+        err = str(e)
+        hint = ""
+        if "PEER_ID_INVALID" in err or "chat not found" in err.lower() or "USER_IS_BLOCKED" in err:
+            hint = f"\n\n⚠️ اول به @{bot_username} برو و /start بزن."
         try:
-            await message.edit_text(
-                f"❌ خطا در لود پنل: {e}\n\n"
-                f"⚠️ اول @{bot_username} را /start کن."
+            await client.send_message(
+                message.chat.id if message.chat else "me",
+                f"❌ خطا در ارسال پنل: {e}{hint}",
             )
         except Exception:
-            try:
-                await client.send_message(
-                    "me",
-                    f"❌ خطا در لود پنل: {e}\n⚠️ اول @{bot_username} را /start کن.",
-                )
-            except Exception:
-                pass
+            pass
 
 
 async def self_panel_callback_handler(client, callback_query):
