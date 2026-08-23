@@ -1861,7 +1861,7 @@ def load_primary_session():
     return value
 
 
-      asyc def main():
+async def main():
     try:
         # start manager bot
         await manager_bot.start()
@@ -1871,15 +1871,6 @@ def load_primary_session():
         await start_web_server()
 
         # keep bot alive
-        await idle()
-
-    async def main():
-    try:
-        await manager_bot.start()
-        logging.info("✅ Manager bot started")
-
-        await start_web_server()
-
         await idle()
 
     except Exception as e:
