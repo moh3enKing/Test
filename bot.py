@@ -1867,9 +1867,6 @@ async def main():
         await manager_bot.start()
         logging.info("✅ Manager bot started")
 
-        # start Render web server
-        await start_web_server()
-
         # keep bot alive
         await idle()
 
