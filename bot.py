@@ -1868,136 +1868,192 @@ async def inline_panel_handler(client, query):
 
 @manager_bot.on_callback_query()
 async def callback_panel_handler(client, callback):
-    data = callback.data.split("_")
-    action = "_".join(data[:-1])
-    target_user_id = int(data[-1])
-    
-    if callback.from_user.id != target_user_id:
-        await callback.answer("⛔️ دسترسی غیرمجاز!", show_alert=True)
-        return
-
-    settings_update = {}
-
-    if action == "toggle_clock":
-        new_state = not CLOCK_STATUS.get(target_user_id, True)
-        CLOCK_STATUS[target_user_id] = new_state
-        settings_update["clock"] = new_state
-        
-        if target_user_id in ACTIVE_BOTS:
-            bot_client = ACTIVE_BOTS[target_user_id][0]
-            if new_state:
-                asyncio.create_task(perform_clock_update_now(bot_client, target_user_id))
-            else:
-                try:
-                    me = await bot_client.get_me()
-                    clean_name = re.sub(r'(?:\s*' + CLOCK_CHARS_REGEX_CLASS + r'+)+$', '', me.first_name).strip()
-                    if clean_name != me.first_name:
-                        await bot_client.update_profile(first_name=clean_name)
-                except: pass
-    
-    elif action == "cycle_font":
-        cur = USER_FONT_CHOICES.get(target_user_id, 'stylized')
-        idx = (FONT_KEYS_ORDER.index(cur) + 1) % len(FONT_KEYS_ORDER)
-        new_font = FONT_KEYS_ORDER[idx]
-        USER_FONT_CHOICES[target_user_id] = new_font
-        CLOCK_STATUS[target_user_id] = True
-        settings_update["font"] = new_font
-        settings_update["clock"] = True
-        
-        if target_user_id in ACTIVE_BOTS:
-            asyncio.create_task(perform_clock_update_now(ACTIVE_BOTS[target_user_id][0], target_user_id))
-    
-    elif action == "toggle_bold":
-        new_state = not BOLD_MODE_STATUS.get(target_user_id, False)
-        BOLD_MODE_STATUS[target_user_id] = new_state
-        settings_update["bold"] = new_state
-    
-    elif action == "toggle_sec":
-        # Cycle: AUTO -> force OFF -> force ON -> AUTO. AUTO is restored on restart.
-        current_mode = SECRETARY_CONTROL_MODE.get(target_user_id, "auto")
-        next_mode = {
-            "auto": "force_off",
-            "force_off": "force_on",
-            "force_on": "auto",
-        }[current_mode]
-        SECRETARY_CONTROL_MODE[target_user_id] = next_mode
-        _apply_secretary_control(target_user_id)
-        await callback.answer(
-            {
-                "auto": "🤖 منشی روی حالت هوشمند است",
-                "force_off": "🟢 منشی دستی خاموش شد",
-                "force_on": "🔴 منشی دستی روشن شد",
-            }[next_mode]
-        )
-        settings_update["secretary"] = SECRETARY_MODE_STATUS.get(target_user_id, False)
-
-    elif action == "toggle_deleted":
-        new_state = not DELETED_BACKUP_STATUS.get(target_user_id, True)
-        DELETED_BACKUP_STATUS[target_user_id] = new_state
-        settings_update["deleted_backup"] = new_state
-
-    elif action == "toggle_seen":
-        new_state = not AUTO_SEEN_STATUS.get(target_user_id, False)
-        AUTO_SEEN_STATUS[target_user_id] = new_state
-        settings_update["auto_seen"] = new_state
-    
-    elif action == "toggle_pv":
-        new_state = not PV_LOCK_STATUS.get(target_user_id, False)
-        PV_LOCK_STATUS[target_user_id] = new_state
-        settings_update["pv_lock"] = new_state
-    
-    elif action == "toggle_anti":
-        new_state = not ANTI_LOGIN_STATUS.get(target_user_id, False)
-        ANTI_LOGIN_STATUS[target_user_id] = new_state
-        settings_update["anti_login"] = new_state
-    
-    elif action == "toggle_type":
-        new_state = not TYPING_MODE_STATUS.get(target_user_id, False)
-        TYPING_MODE_STATUS[target_user_id] = new_state
-        if new_state:
-            PLAYING_MODE_STATUS[target_user_id] = False
-            settings_update["playing"] = False
-        settings_update["typing"] = new_state
-    
-    elif action == "toggle_game":
-        new_state = not PLAYING_MODE_STATUS.get(target_user_id, False)
-        PLAYING_MODE_STATUS[target_user_id] = new_state
-        if new_state:
-            TYPING_MODE_STATUS[target_user_id] = False
-            settings_update["typing"] = False
-        settings_update["playing"] = new_state
-    
-    elif action == "toggle_g_enemy":
-        new_state = not GLOBAL_ENEMY_STATUS.get(target_user_id, False)
-        GLOBAL_ENEMY_STATUS[target_user_id] = new_state
-        settings_update["global_enemy"] = new_state
-    
-    elif action.startswith("lang_"):
-        lang_map = {"en": "en", "ru": "ru", "cn": "zh-CN"}
-        btn_lang = action.split("_")[1]
-        actual_lang = lang_map.get(btn_lang)
-        
-        current = AUTO_TRANSLATE_TARGET.get(target_user_id)
-        new_lang = actual_lang if current != actual_lang else None
-        
-        AUTO_TRANSLATE_TARGET[target_user_id] = new_lang
-        settings_update["translate"] = new_lang
-    
-    elif action == "close_panel":
-        try:
-            if callback.inline_message_id:
-                await client.edit_inline_text(callback.inline_message_id, "✔ پنل بسته شد.")
-            else:
-                await callback.message.delete()
-        except: pass
-        return
-
-    if settings_update:
-        data_manager.update_user_data(target_user_id, {"settings": settings_update})
-
     try:
-        await callback.edit_message_reply_markup(generate_panel_markup(target_user_id))
-    except: pass
+        raw = callback.data or ""
+        logging.info("Panel callback: from=%s data=%r", getattr(callback.from_user, "id", None), raw)
+
+        if not raw:
+            await callback.answer()
+            return
+
+        # Parse "action_name_USERID" (userid is last segment)
+        parts = raw.rsplit("_", 1)
+        if len(parts) != 2:
+            await callback.answer("❌ داده نامعتبر", show_alert=True)
+            return
+
+        action, uid_str = parts
+        try:
+            target_user_id = int(uid_str)
+        except ValueError:
+            await callback.answer("❌ شناسه نامعتبر", show_alert=True)
+            return
+
+        if not callback.from_user or callback.from_user.id != target_user_id:
+            await callback.answer("⛔️ دسترسی غیرمجاز!", show_alert=True)
+            return
+
+        settings_update = {}
+
+        if action == "toggle_clock":
+            new_state = not CLOCK_STATUS.get(target_user_id, True)
+            CLOCK_STATUS[target_user_id] = new_state
+            settings_update["clock"] = new_state
+            if target_user_id in ACTIVE_BOTS:
+                bot_client = ACTIVE_BOTS[target_user_id][0]
+                if new_state:
+                    asyncio.create_task(perform_clock_update_now(bot_client, target_user_id))
+                else:
+                    try:
+                        me = await bot_client.get_me()
+                        clean_name = re.sub(
+                            r"(?:\s*" + CLOCK_CHARS_REGEX_CLASS + r"+)+$",
+                            "",
+                            me.first_name or "",
+                        ).strip()
+                        if clean_name and clean_name != me.first_name:
+                            await bot_client.update_profile(first_name=clean_name)
+                    except Exception:
+                        pass
+            await callback.answer("ساعت " + ("روشن ✅" if new_state else "خاموش ❌"))
+
+        elif action == "cycle_font":
+            cur = USER_FONT_CHOICES.get(target_user_id, "stylized")
+            try:
+                idx = (FONT_KEYS_ORDER.index(cur) + 1) % len(FONT_KEYS_ORDER)
+            except ValueError:
+                idx = 0
+            new_font = FONT_KEYS_ORDER[idx]
+            USER_FONT_CHOICES[target_user_id] = new_font
+            CLOCK_STATUS[target_user_id] = True
+            settings_update["font"] = new_font
+            settings_update["clock"] = True
+            if target_user_id in ACTIVE_BOTS:
+                asyncio.create_task(perform_clock_update_now(ACTIVE_BOTS[target_user_id][0], target_user_id))
+            await callback.answer(f"فونت: {new_font}")
+
+        elif action == "toggle_bold":
+            new_state = not BOLD_MODE_STATUS.get(target_user_id, False)
+            BOLD_MODE_STATUS[target_user_id] = new_state
+            settings_update["bold"] = new_state
+            await callback.answer("بولد " + ("روشن ✅" if new_state else "خاموش ❌"))
+
+        elif action == "toggle_sec":
+            current_mode = SECRETARY_CONTROL_MODE.get(target_user_id, "auto")
+            next_mode = {
+                "auto": "force_off",
+                "force_off": "force_on",
+                "force_on": "auto",
+            }.get(current_mode, "auto")
+            SECRETARY_CONTROL_MODE[target_user_id] = next_mode
+            _apply_secretary_control(target_user_id)
+            settings_update["secretary"] = SECRETARY_MODE_STATUS.get(target_user_id, False)
+            await callback.answer(
+                {
+                    "auto": "🤖 منشی هوشمند",
+                    "force_off": "🟢 منشی خاموش",
+                    "force_on": "🔴 منشی روشن",
+                }[next_mode]
+            )
+
+        elif action == "toggle_deleted":
+            new_state = not DELETED_BACKUP_STATUS.get(target_user_id, True)
+            DELETED_BACKUP_STATUS[target_user_id] = new_state
+            settings_update["deleted_backup"] = new_state
+            await callback.answer("ضدحذف " + ("روشن ✅" if new_state else "خاموش ❌"))
+
+        elif action == "toggle_seen":
+            new_state = not AUTO_SEEN_STATUS.get(target_user_id, False)
+            AUTO_SEEN_STATUS[target_user_id] = new_state
+            settings_update["auto_seen"] = new_state
+            await callback.answer("سین " + ("روشن ✅" if new_state else "خاموش ❌"))
+
+        elif action == "toggle_pv":
+            new_state = not PV_LOCK_STATUS.get(target_user_id, False)
+            PV_LOCK_STATUS[target_user_id] = new_state
+            settings_update["pv_lock"] = new_state
+            await callback.answer("پیوی " + ("قفل 🔒" if new_state else "باز 🔓"))
+
+        elif action == "toggle_anti":
+            new_state = not ANTI_LOGIN_STATUS.get(target_user_id, False)
+            ANTI_LOGIN_STATUS[target_user_id] = new_state
+            settings_update["anti_login"] = new_state
+            await callback.answer("انتی‌لاگین " + ("روشن ✅" if new_state else "خاموش ❌"))
+
+        elif action == "toggle_type":
+            new_state = not TYPING_MODE_STATUS.get(target_user_id, False)
+            TYPING_MODE_STATUS[target_user_id] = new_state
+            if new_state:
+                PLAYING_MODE_STATUS[target_user_id] = False
+                settings_update["playing"] = False
+            settings_update["typing"] = new_state
+            await callback.answer("تایپ " + ("روشن ✅" if new_state else "خاموش ❌"))
+
+        elif action == "toggle_game":
+            new_state = not PLAYING_MODE_STATUS.get(target_user_id, False)
+            PLAYING_MODE_STATUS[target_user_id] = new_state
+            if new_state:
+                TYPING_MODE_STATUS[target_user_id] = False
+                settings_update["typing"] = False
+            settings_update["playing"] = new_state
+            await callback.answer("بازی " + ("روشن ✅" if new_state else "خاموش ❌"))
+
+        elif action == "toggle_g_enemy":
+            new_state = not GLOBAL_ENEMY_STATUS.get(target_user_id, False)
+            GLOBAL_ENEMY_STATUS[target_user_id] = new_state
+            settings_update["global_enemy"] = new_state
+            await callback.answer("دشمن همگانی " + ("روشن ✅" if new_state else "خاموش ❌"))
+
+        elif action.startswith("lang_"):
+            lang_map = {"lang_en": "en", "lang_ru": "ru", "lang_cn": "zh-CN"}
+            actual_lang = lang_map.get(action)
+            current = AUTO_TRANSLATE_TARGET.get(target_user_id)
+            new_lang = actual_lang if current != actual_lang else None
+            AUTO_TRANSLATE_TARGET[target_user_id] = new_lang
+            settings_update["translate"] = new_lang
+            await callback.answer("ترجمه: " + (new_lang or "خاموش"))
+
+        elif action == "close_panel":
+            try:
+                await callback.message.delete()
+            except Exception:
+                try:
+                    await callback.edit_message_text("✔ پنل بسته شد.")
+                except Exception:
+                    pass
+            await callback.answer("بسته شد")
+            return
+
+        else:
+            await callback.answer()
+            return
+
+        if settings_update:
+            try:
+                data_manager.update_user_data(target_user_id, {"settings": settings_update})
+            except Exception:
+                logging.exception("Failed to persist panel settings")
+
+        try:
+            await callback.edit_message_text(
+                "⚡️ پنل مدیریت",
+                reply_markup=generate_panel_markup(target_user_id),
+            )
+        except Exception:
+            try:
+                await callback.edit_message_reply_markup(
+                    generate_panel_markup(target_user_id)
+                )
+            except Exception:
+                logging.exception("Failed to refresh panel markup")
+
+    except Exception as e:
+        logging.exception("callback_panel_handler error: %s", e)
+        try:
+            await callback.answer(f"❌ خطا: {e}", show_alert=True)
+        except Exception:
+            pass
+
 
 @manager_bot.on_message(filters.command("start") | filters.regex(r"^(start|Start|START|استارت)$"))
 async def start_login(client, message):
