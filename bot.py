@@ -1718,7 +1718,7 @@ async def callback_panel_handler(client, callback):
         await callback.edit_message_reply_markup(generate_panel_markup(target_user_id))
     except: pass
 
-@manager_bot.on_message(filters.command("start") | filters.regex(r"^(?i)(/start|start|استارت)$"))
+@manager_bot.on_message(filters.command("start") | filters.regex(r"^(start|Start|START|استارت)$"))
 async def start_login(client, message):
     try:
         logging.info(
