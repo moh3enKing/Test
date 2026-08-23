@@ -1866,32 +1866,52 @@ async def inline_panel_handler(client, query):
         except Exception:
             pass
 
-@manager_bot.on_callback_query()
 async def callback_panel_handler(client, callback):
     try:
         raw = callback.data or ""
-        print(f"[CALLBACK] from={getattr(callback.from_user, 'id', None)} data={raw!r}", flush=True)
-        logging.info("Panel callback: from=%s data=%r", getattr(callback.from_user, "id", None), raw)
+        from_user_id = getattr(callback.from_user, "id", None)
+        inline_message_id = getattr(callback, "inline_message_id", None)
+
+        print(
+            f"[CALLBACK] from={from_user_id} data={raw!r} inline_message_id={inline_message_id!r}",
+            flush=True,
+        )
+        logging.info(
+            "Panel callback: from=%s data=%r inline_message_id=%r",
+            from_user_id,
+            raw,
+            inline_message_id,
+        )
+
+        # Acknowledge the callback immediately. This removes Telegram's
+        # loading spinner even when a later state update/edit takes time.
+        try:
+            await callback.answer()
+        except Exception:
+            logging.exception("Failed to acknowledge callback query")
 
         if not raw:
-            await callback.answer()
             return
 
         # Parse "action_name_USERID" (userid is last segment)
         parts = raw.rsplit("_", 1)
         if len(parts) != 2:
-            await callback.answer("❌ داده نامعتبر", show_alert=True)
+            logging.warning("Invalid panel callback data: %r", raw)
             return
 
         action, uid_str = parts
         try:
             target_user_id = int(uid_str)
         except ValueError:
-            await callback.answer("❌ شناسه نامعتبر", show_alert=True)
+            logging.warning("Invalid panel user id in callback: %r", raw)
             return
 
         if not callback.from_user or callback.from_user.id != target_user_id:
-            await callback.answer("⛔️ دسترسی غیرمجاز!", show_alert=True)
+            logging.warning(
+                "Unauthorized panel callback: from=%s target=%s",
+                from_user_id,
+                target_user_id,
+            )
             return
 
         settings_update = {}
@@ -2035,25 +2055,62 @@ async def callback_panel_handler(client, callback):
             except Exception:
                 logging.exception("Failed to persist panel settings")
 
-        try:
-            await callback.edit_message_text(
-                "⚡️ پنل مدیریت",
-                reply_markup=generate_panel_markup(target_user_id),
-            )
-        except Exception:
-            try:
-                await callback.edit_message_reply_markup(
-                    generate_panel_markup(target_user_id)
-                )
-            except Exception:
-                logging.exception("Failed to refresh panel markup")
+        await refresh_manager_panel(callback, target_user_id)
 
     except Exception as e:
         logging.exception("callback_panel_handler error: %s", e)
+        # The callback was already acknowledged above, so do not call
+        # callback.answer() a second time. Just log the failure.
+
+
+async def refresh_manager_panel(callback, user_id):
+    """Refresh the panel for both normal and inline messages.
+
+    Inline-mode messages do not have callback.message; Telegram gives us
+    inline_message_id instead. This helper handles both cases.
+    """
+    markup = generate_panel_markup(user_id)
+
+    # Most important case for this panel: a result inserted from inline mode.
+    inline_message_id = getattr(callback, "inline_message_id", None)
+    if inline_message_id:
         try:
-            await callback.answer(f"❌ خطا: {e}", show_alert=True)
+            await manager_bot.edit_inline_text(
+                inline_message_id,
+                "⚡️ پنل مدیریت",
+                reply_markup=markup,
+            )
+            return
         except Exception:
-            pass
+            logging.exception(
+                "Failed to edit inline panel: inline_message_id=%r",
+                inline_message_id,
+            )
+
+    # Fallback for a regular bot message containing the same keyboard.
+    message = getattr(callback, "message", None)
+    if message is not None:
+        try:
+            await message.edit_text("⚡️ پنل مدیریت", reply_markup=markup)
+            return
+        except Exception:
+            logging.exception("Failed to edit regular panel message")
+
+        try:
+            await message.edit_reply_markup(reply_markup=markup)
+            return
+        except Exception:
+            logging.exception("Failed to edit regular panel markup")
+
+    logging.warning(
+        "Panel callback received but no editable message target was available: %r",
+        inline_message_id,
+    )
+
+
+# Register this explicitly instead of relying on the decorator.
+# This makes the callback handler registration obvious and deterministic.
+manager_bot.add_handler(CallbackQueryHandler(callback_panel_handler), group=0)
 
 
 @manager_bot.on_message(filters.command("start") | filters.regex(r"^(start|Start|START|استارت)$"))
@@ -2313,21 +2370,23 @@ async def try_start_primary_session():
 
 async def main():
     try:
-        # start manager bot (required for panel buttons)
-        await manager_bot.start()
-        me_bot = await manager_bot.get_me()
-        logging.info("✅ Manager bot started as @%s (id=%s)", me_bot.username, me_bot.id)
-        logging.info("👉 Open https://t.me/%s and send /start", me_bot.username)
-        print(f"[BOOT] manager bot @{me_bot.username} id={me_bot.id}", flush=True)
-
         async def _raw_cb_debug(client, update, users, chats):
             name = type(update).__name__
             if "Callback" in name:
                 print(f"[RAW] {name}: {update}", flush=True)
                 logging.info("RAW callback update: %s", name)
 
+        # Register debug handler before start so the very first callback
+        # update can also be observed.
         manager_bot.add_handler(RawUpdateHandler(_raw_cb_debug), group=-100)
         logging.info("✅ Callback raw debug registered")
+
+        # start manager bot (required for panel buttons)
+        await manager_bot.start()
+        me_bot = await manager_bot.get_me()
+        logging.info("✅ Manager bot started as @%s (id=%s)", me_bot.username, me_bot.id)
+        logging.info("👉 Open https://t.me/%s and send /start", me_bot.username)
+        print(f"[BOOT] manager bot @{me_bot.username} id={me_bot.id}", flush=True)
 
         # start Render web server (keeps free instance awake via health checks)
         await start_web_server()
