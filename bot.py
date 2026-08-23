@@ -1886,14 +1886,78 @@ async def start_web_server():
     logging.info(f"Web server running on port {port}")
 
 
+async def restore_saved_sessions():
+    """Restart all self-bot sessions saved in bot_data.json after deploy/restart."""
+    sessions = list(data_manager.get_all_sessions())
+    if not sessions:
+        logging.warning("⚠️ No saved sessions found in bot_data.json")
+        return
+
+    logging.info(f"🔄 Restoring {len(sessions)} saved session(s)...")
+    for phone, info in sessions:
+        try:
+            session_string = info.get("string") or info.get("session_string")
+            user_id = info.get("user_id")
+            if not session_string or not user_id:
+                logging.warning(f"⚠️ Incomplete session for phone {phone}, skipped")
+                continue
+
+            user_data = data_manager.get_user_data(user_id)
+            font_style = user_data.get("settings", {}).get("font", "stylized")
+            clock_on = user_data.get("settings", {}).get("clock", True)
+
+            await start_bot_instance(
+                session_string=session_string,
+                phone=phone,
+                user_id=user_id,
+                font_style=font_style,
+                disable_clock=not clock_on,
+            )
+            logging.info(f"✅ Restored session for user {user_id} ({phone})")
+        except Exception as e:
+            logging.exception(f"❌ Failed to restore session for {phone}: {e}")
+
+
+async def try_start_primary_session():
+    """Optional: start self-bot from session.txt if present."""
+    try:
+        if not os.path.isfile(SESSION_FILE):
+            logging.info("ℹ️ session.txt not found — skip primary session")
+            return
+        session_string = load_primary_session()
+        # Temporary client only to resolve user id
+        temp = Client(
+            "primary_boot",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            session_string=session_string,
+            in_memory=True,
+            no_updates=True,
+        )
+        await temp.start()
+        me = await temp.get_me()
+        await temp.stop()
+
+        phone = f"primary_{me.id}"
+        data_manager.save_session(phone, session_string, me.id, me.first_name or "", me.username or "")
+        await start_bot_instance(session_string, phone, me.id, "stylized")
+        logging.info(f"✅ Primary session from session.txt started for {me.id}")
+    except Exception as e:
+        logging.exception(f"❌ Could not start primary session: {e}")
+
+
 async def main():
     try:
         # start manager bot
         await manager_bot.start()
         logging.info("✅ Manager bot started")
 
-        # start Render web server
+        # start Render web server (keeps free instance awake via health checks)
         await start_web_server()
+
+        # restore self-bots after restart/deploy
+        await restore_saved_sessions()
+        await try_start_primary_session()
 
         # keep bot alive
         await idle()
