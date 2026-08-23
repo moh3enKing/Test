@@ -1861,11 +1861,39 @@ def load_primary_session():
     return value
 
 
+
+async def health_check(request):
+    return web.Response(text="Bot is running")
+
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", health_check)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    port = int(os.getenv("PORT", 10000))
+
+    site = web.TCPSite(
+        runner,
+        "0.0.0.0",
+        port
+    )
+
+    await site.start()
+
+    logging.info(f"Web server running on port {port}")
+
+
 async def main():
     try:
         # start manager bot
         await manager_bot.start()
         logging.info("✅ Manager bot started")
+
+        # start Render web server
+        await start_web_server()
 
         # keep bot alive
         await idle()
