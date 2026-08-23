@@ -1718,15 +1718,42 @@ async def callback_panel_handler(client, callback):
         await callback.edit_message_reply_markup(generate_panel_markup(target_user_id))
     except: pass
 
-@manager_bot.on_message(filters.command("start"))
+@manager_bot.on_message(filters.command("start") | filters.regex(r"^(?i)(/start|start|استارت)$"))
 async def start_login(client, message):
-    buttons = [[KeyboardButton("📱 شماره و شروع", request_contact=True)]]
-    
-    if message.from_user and message.from_user.id in GOD_ADMIN_IDS:
-        buttons.append([KeyboardButton("📊 وضعیت ربات"), KeyboardButton("📢 پیام همگانی")])
-        
-    kb = ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=True)
-    await message.reply_text("👋 خوش آمدید.", reply_markup=kb)
+    try:
+        logging.info(
+            "Manager bot /start from user_id=%s chat_id=%s text=%r",
+            getattr(message.from_user, "id", None),
+            message.chat.id if message.chat else None,
+            message.text,
+        )
+        buttons = [[KeyboardButton("📱 شماره و شروع", request_contact=True)]]
+
+        if message.from_user and message.from_user.id in GOD_ADMIN_IDS:
+            buttons.append([KeyboardButton("📊 وضعیت ربات"), KeyboardButton("📢 پیام همگانی")])
+
+        kb = ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
+        await message.reply_text("👋 خوش آمدید.\nبرای فعال‌سازی سلف‌بات، دکمه زیر را بزنید.", reply_markup=kb)
+    except Exception as e:
+        logging.exception("start_login failed: %s", e)
+        try:
+            await message.reply_text(f"❌ خطا در استارت: {e}")
+        except Exception:
+            pass
+
+
+@manager_bot.on_message(filters.private & filters.incoming, group=50)
+async def manager_debug_incoming(client, message):
+    """Log every private message to manager bot so we can see if updates arrive."""
+    try:
+        logging.info(
+            "Manager bot incoming: from=%s text=%r contact=%s",
+            getattr(message.from_user, "id", None),
+            (message.text or message.caption),
+            bool(message.contact),
+        )
+    except Exception:
+        pass
 
 @manager_bot.on_message(filters.private, group=-1)
 async def admin_broadcast_sender(client, message):
@@ -1950,7 +1977,9 @@ async def main():
     try:
         # start manager bot
         await manager_bot.start()
-        logging.info("✅ Manager bot started")
+        me_bot = await manager_bot.get_me()
+        logging.info("✅ Manager bot started as @%s (id=%s)", me_bot.username, me_bot.id)
+        logging.info("👉 Open https://t.me/%s and send /start", me_bot.username)
 
         # start Render web server (keeps free instance awake via health checks)
         await start_web_server()
