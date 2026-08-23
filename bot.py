@@ -43,9 +43,18 @@ def patch_peer_id_validation():
 
 patch_peer_id_validation()
 
-API_ID = 39318473
-API_HASH = "e94cb45fe2c1670979beb4b51a925c98"
+# ==============================
+# Render Environment Variables
+# ==============================
 
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+if not API_ID or not API_HASH or not BOT_TOKEN:
+    raise RuntimeError(
+        "❌ Missing Environment Variables: API_ID / API_HASH / BOT_TOKEN"
+    )
 
 GOD_ADMIN_IDS = [5637609683]
 
