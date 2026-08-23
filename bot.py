@@ -1861,63 +1861,21 @@ def load_primary_session():
     return value
 
 
-async def main():
-    # Start the existing account from session.txt first.
+      async def main():
     try:
-        session_string = load_primary_session()
+        # start manager bot
+        await manager_bot.start()
+        logging.info("✅ Manager bot started")
 
-        # Get account identity once so the existing data/panel system knows the user.
-        probe = Client(
-            "primary_probe",
-            api_id=API_ID,
-            api_hash=API_HASH,
-            session_string=session_string,
-            in_memory=True,
-        )
-        await probe.start()
-        me = await probe.get_me()
-        await probe.stop()
+        # start Render web server
+        await start_web_server()
 
-        # Register the single preconfigured account in the source's existing DB.
-        data_manager.save_session(
-            "session.txt",
-            session_string,
-            me.id,
-            me.first_name or "",
-            me.username or "",
-        )
-
-        # Start the actual self-client instance with all original handlers/tasks.
-        asyncio.create_task(
-            start_bot_instance(
-                session_string,
-                "session.txt",
-                me.id,
-                "stylized",
-                False
-            )
-        )
-
-        logging.info(
-            f"✅ Primary account loaded from session.txt: "
-            f"{me.first_name or '-'} ({me.id})"
-        )
-
-        # Start the second authorization in the same process. If it fails, the
-        # main self client and manager bot continue unchanged.
-        await start_presence_monitor(me.id)
+        # keep bot alive
+        await idle()
 
     except Exception as e:
-        logging.exception(f"❌ Failed to start primary account from session.txt: {e}")
-
-    # Original helper/manager bot remains enabled for panel/login/admin controls.
-    await manager_bot.start()
-    logging.info("✅ Manager bot started")
-
-await start_web_server()
-
-    await idle()
+        logging.exception(f"❌ Error in main: {e}")
 
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(main())
+    asyncio.run(main())
